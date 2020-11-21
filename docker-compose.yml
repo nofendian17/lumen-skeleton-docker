@@ -1,0 +1,89 @@
+version: '3.3'
+
+services:
+  nginx:
+    image: nginx:stable-alpine
+    ports:
+      - ${NGINX_PORT}:80
+    links:
+      - php:php
+    volumes:
+      - ./nginx/config/nginx.conf.template:/etc/nginx/template/nginx.conf.template
+      - ./src:/application:rw
+    depends_on:
+      - php
+    environment:
+      - 'NGINX_SERVER_NAME=${NGINX_SERVER_NAME}'
+      - 'ESC=$$'
+    command: /bin/sh -c "envsubst < /etc/nginx/template/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"
+    networks:
+      - custom_network
+  php:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    tty: true
+    depends_on: 
+      - mysql
+    volumes:
+      - ./php/config/custom.php.ini:/usr/local/etc/php/conf.d/custom.php.ini
+      - ./src:/application:rw
+    ports:
+      - 9000
+    networks:
+      - custom_network
+  mysql:
+    image: mysql:8.0
+    restart: always
+    ports: 
+      - ${MYSQL_PORT}:3306
+    user: mysql
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes: 
+      - ./mysql/config/mysql.ini.cnf:/etc/mysql/config.d/config-file.cnf
+      - ./mysql/storage/data:/var/lib/mysql/:rw
+    networks: 
+      - custom_network
+  redis:
+    image: redis:4.0.5-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    environment:
+      REDIS_PORT: ${REDIS_PORT}
+    ports:
+      - ${REDIS_PORT}:${REDIS_PORT}
+    expose:
+      - ${REDIS_PORT}
+    volumes:
+      - ./redis/storage/data:/data:rw
+    networks:
+      - custom_network
+  mongo:
+    image: mongo:latest
+    container_name: mongo-db
+    environment:
+      - MONGO_INITDB_DATABASE=${MONGO_DATABASE}
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
+      - MONGO_USER=${MONGO_USER}
+      - MONGO_PASSWORD=${MONGO_PASSWORD}
+    ports:
+      - ${MONGO_PORT}:27017
+    volumes:
+      - ./mongo/config/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+      - ./mongo/storage/data:/data/db
+    networks:
+      - custom_network
+
+networks:
+  custom_network:
+    name: ${DOCKER_NETWORK_NAME}
+    driver: bridge
+volumes:
+  custom_network:
+    name: ${DOCKER_VOLUME_NAME}
+    driver: local
